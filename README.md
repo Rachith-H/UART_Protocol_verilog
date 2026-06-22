@@ -1,53 +1,41 @@
-# Full-Duplex UART Peripheral — Verilog RTL
+# Full-Duplex UART Peripheral - Verilog RTL
 
-A synthesizable, full-duplex UART peripheral written in Verilog. Supports optional even parity, configurable baud rate, and a simple register-mapped bus interface. Verified via a self-checking full-duplex testbench with two independent UART instances communicating at ~9600 baud across different clock domains.
+This repository contains a fully synthesizable UART (Universal Asynchronous Receiver Transmitter) design
+implemented in Verilog HDL. The design consists of independent transmitter (TX),
+receiver (RX), and baud rate generator modules integrated through a top-level UART module. 
+The UART follows the standard serial communication protocol with configurable baud rates. 
+The design has been verified using RTL simulation with UART full duplex testing, including successful back-to-back byte transfers.
 
 ---
 
 ## Features
 
-- Full-duplex TX and RX operation
+- Full duplex TX and RX operation
 - Optional even parity (configurable per transfer)
 - Framing error and overrun detection on RX
-- Center-sampling RX — half-baud tick aligns sample to bit center for noise immunity
+- Center sampling RX — half baud tick aligns sample to bit center for noise immunity
 - Separate baud generators for TX and RX, each independently gated
 - Register-mapped control interface (`CTRL`, `STATUS`, `TXDATA`, `RXDATA`, `BAUD_CNT`)
-- FSM-based TX and RX datapaths (3-state: IDLE → TRANSFER/RECEIVE → DONE)
+- FSM based TX and RX datapaths (3-state: IDLE → TRANSFER/RECEIVE → DONE)
 - Verified with two UART instances at 100 MHz and 50 MHz clocks, both running ~9600 baud
 
 ---
 
 ## Block Diagram
 
-```
-                   ┌──────────────────────────────────────┐
-                   │             UART_top                  │
-                   │                                       │
-  Bus Interface ──►│  ctrl / baud_cnt / tx_data registers  │
-  (sel, en,        │  status / rx_data read mux            │
-   offset, d_in,   │                                       │
-   d_out, ready)   │  ┌──────────┐      ┌──────────────┐  │
-                   │  │ tx_UART  │      │   rx_UART    │  │
-                   │  │  TX FSM  │      │   RX FSM     │  │
-                   │  │          │      │ (hf_baud     │  │
-                   │  └────┬─────┘      │  center-samp)│  │
-                   │       │            └──────┬───────┘  │
-                   │  ┌────▼─────┐    ┌────────▼──────┐   │
-                   │  │ baud_gen │    │   baud_gen    │   │
-                   │  │ (TX clk) │    │   (RX clk)    │   │
-                   │  └──────────┘    └───────────────┘   │
-                   └──────────────────────────────────────┘
-                          │                    ▲
-                         TX                   RX
-```
+![BD](Images/UART_top_BD.png)
 
 ---
 
 ## Module Reference
 
-### `UART_top.v`
+### [UART_top](RTL%20Files/UART_top.v)
 
-Top-level integration module. Instantiates TX, RX, and two independent baud generators. Exposes a word-addressed register interface.
+UART_top is the integration layer that ties the TX, RX, and dual baud generator instances into a single peripheral. 
+It exposes a register-mapped interface via sel, en, and a 3-bit offset, covering five registers - CTRL, STATUS, TXDATA, RXDATA, and BAUD_CNT. 
+Two independent baud_gen instances (one each for TX and RX) are gated separately by their FSMs but share the same baud_cnt value. 
+Writing to TXDATA auto-generates the tx_st strobe to trigger transmission; reading RXDATA auto-asserts rx_read 
+to clear the valid flag - keeping the interface minimal with no extra trigger writes needed.
 
 | Port | Dir | Width | Description |
 |------|-----|-------|-------------|
@@ -62,11 +50,19 @@ Top-level integration module. Instantiates TX, RX, and two independent baud gene
 | `TX` | O | 1 | Serial transmit line |
 | `RX` | I | 1 | Serial receive line |
 
+
+#### RTL Schematic
+
+![top](Images/Top_sch.png)
+
 ---
 
-### `tx_UART.v`
+### [UART Transmitter](RTL%20Files/tx_UART.v)
 
-FSM-based transmitter. Serializes 8 data bits LSB-first with a start bit (logic 0) and optional even parity before the stop bit (logic 1).
+tx_UART is a 3-state FSM that serializes an 8-bit byte LSB-first, 
+preceded by a start bit and followed by an optional even parity bit and stop bit. 
+It stays in IDLE until both tx_en and tx_st are asserted, at which point it pulls TX low (start bit) and enables the baud generator. 
+Data bits are shifted out on each baud_tic, and once all 8 bits are sent, it moves to DONE to handle the parity/stop bit before returning to IDLE and deasserting tx_busy.
 
 **States:** `IDLE → TRANSFER → DONE`
 
@@ -82,11 +78,19 @@ FSM-based transmitter. Serializes 8 data bits LSB-first with a start bit (logic 
 | `tx_busy` | O | High while frame in progress |
 | `baud_en` | O | Gates the TX baud generator |
 
+#### RTL Schematic
+
+![top](Images/TX_sch.png)
+
 ---
 
-### `rx_UART.v`
+### [UART Receiver](RTL%20Files/rx_UART.v)
 
-FSM-based receiver with center-sampling. Start bit is detected on a falling edge of `RX`; the receiver waits for `hf_baud` (half-baud tick) to re-sample at the bit center before transitioning to RECEIVE, rejecting glitches shorter than half a baud period.
+rx_UART is a 3-state FSM (IDLE → RECEIVE → DONE) that deserializes incoming data with center-sampling for noise immunity. 
+In IDLE, it watches for a falling edge on RX (start bit) and waits for hf_baud to re-sample at the bit center before committing to RECEIVE -
+this rejects glitches shorter than half a baud period. Bits are then captured on each baud_tic into rx_data LSB-first. 
+In DONE, it optionally checks parity, validates the stop bit (asserting fr_error if low), and raises rx_val to signal a valid byte. 
+Overrun is flagged if a new start bit arrives before the previous byte is read.
 
 **States:** `IDLE → RECEIVE → DONE`
 
@@ -106,11 +110,19 @@ FSM-based receiver with center-sampling. Start bit is detected on a falling edge
 | `overrun` | O | New frame started before previous byte was read |
 | `baud_en` | O | Gates the RX baud generator |
 
+
+#### RTL Schematic
+
+![top](Images/RX_sch.png)
+
 ---
 
-### `baud_gen.v`
+### [BAUD Generator](RTL%20Files/baud_gen.v)
 
-Parameterized clock divider. Counts up to `baud_cnt` and generates a 1-cycle `baud_tic` pulse, plus a `hf_baud` pulse at the halfway point for center-sampling. Gated by `en` — counter resets when disabled.
+baud_gen is a simple 16-bit counter that counts up to baud_cnt and resets, generating a single-cycle baud_tic pulse at each rollover. 
+It also produces a hf_baud pulse at the halfway point (baud_cnt >> 1), used by the RX FSM for center-sampling. 
+The counter is gated by en — it resets to zero when disabled, ensuring clean restarts between frames. 
+Two instances are used in UART_top, one for TX and one for RX, both sharing the same baud_cnt but independently gated by their respective FSMs.
 
 | Port | Dir | Description |
 |------|-----|-------------|
@@ -124,6 +136,10 @@ Parameterized clock divider. Counts up to `baud_cnt` and generates a 1-cycle `ba
 ```
 baud_cnt = CLK_FREQ / BAUD_RATE
 ```
+
+#### RTL Schematic
+
+![top](Images/baud_gen_sch.png)
 
 ---
 
@@ -139,25 +155,23 @@ Accessed via `offset[2:0]`. Write: `sel=1, en=1`. Read: `sel=1, en=0`.
 | `3'd3` | `RXDATA` | R | 8-bit | Read received byte; clears `rx_val` and `overrun` |
 | `3'd4` | `BAUD_CNT` | R/W | 16-bit | Baud divisor (`CLK_FREQ / BAUD_RATE`) |
 
----
+Registers are word-aligned and 32-bit wide, with unused upper bits read back as zero.
 
-## Directory Structure
+- CTRL (0x00) — 8-bit control register, write/read.
+  - [0] - TX enable
+  - [1] - RX enable
+  - [2] - Parity enable (applies to both TX and RX)
 
-```
-.
-├── rtl/
-│   ├── UART_top.v          # Top-level with register interface
-│   ├── tx_UART.v           # TX FSM
-│   ├── rx_UART.v           # RX FSM with center-sampling
-│   └── baud_gen.v          # Parameterized baud generator
-├── tb/
-│   └── uart_fullduplex_tb.v  # Full-duplex testbench (two UART instances)
-├── sim/
-│   └── waveforms/          # GTKWave screenshots
-├── docs/
-│   └── rtl_schematic/      # RTL schematic screenshots
-└── README.md
-```
+- STATUS (0x01) - 8-bit status register, read-only. Reflects the current state of the peripheral.
+  - [0] — TX busy: high while a frame is being transmitted
+  - [1] — RX valid: high when a received byte is ready to be read
+  - [2] — Framing error: stop bit was not logic 1
+  - [3] — Parity error: received parity bit didn't match expected even parity
+  - [4] — Overrun: a new frame arrived before the previous byte was read
+
+- TXDATA (0x02) — 8-bit, write-only. Writing here loads the transmit byte and simultaneously asserts tx_st, triggering the TX FSM to start transmission immediately.
+- RXDATA (0x03) — 8-bit, read-only. Returns the last received byte. Reading this register automatically asserts rx_read, clearing rx_val and the overrun flag.
+- BAUD_CNT (0x04) — 16-bit, write/read. Sets the baud rate divisor for both TX and RX baud generators. Calculated as CLK_FREQ / BAUD_RATE.
 
 ---
 
@@ -181,19 +195,6 @@ The testbench instantiates two `UART_top` instances (`uart_A` and `uart_B`) with
 
 Each instance waits on `rx_val` before reading RXDATA and transmitting the next byte — demonstrating synchronized full-duplex handshaking across different clock domains.
 
-### Running the simulation
-
-```bash
-# Compile
-iverilog -o uart_sim tb/uart_fullduplex_tb.v rtl/UART_top.v rtl/tx_UART.v rtl/rx_UART.v rtl/baud_gen.v
-
-# Run
-vvp uart_sim
-
-# View waveforms (if $dumpfile is added to tb)
-gtkwave dump.vcd
-```
-
 ---
 
 ## Simulation Waveforms
@@ -204,26 +205,10 @@ gtkwave dump.vcd
 
 ---
 
-## RTL Schematic
-
-> *Add RTL schematic screenshots here.*
-
-<!-- Example: ![RTL Schematic](docs/rtl_schematic/uart_top_schematic.png) -->
-
----
-
 ## Tools Used
 
 | Tool | Purpose |
 |------|---------|
-| Icarus Verilog | RTL simulation |
-| GTKWave | Waveform analysis |
 | Vivado / Yosys | RTL schematic / synthesis |
 
 ---
-
-## Author
-
-**Rachith H**  
-B.E. ECE — Bapuji Institute of Engineering and Technology, Davangere  
-[GitHub](https://github.com/Rachith-H) · [LinkedIn](https://www.linkedin.com/in/) <!-- add your LinkedIn slug -->
