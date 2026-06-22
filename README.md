@@ -132,11 +132,6 @@ Two instances are used in UART_top, one for TX and one for RX, both sharing the 
 | `baud_tic` | O | Full baud tick (`count == baud_cnt`) |
 | `hf_baud` | O | Half-baud tick (`count == baud_cnt >> 1`) |
 
-**Baud divisor formula:**
-```
-baud_cnt = CLK_FREQ / BAUD_RATE
-```
-
 #### RTL Schematic
 
 ![top](Images/baud_gen_sch.png)
@@ -157,27 +152,34 @@ Accessed via `offset[2:0]`. Write: `sel=1, en=1`. Read: `sel=1, en=0`.
 
 Registers are word-aligned and 32-bit wide, with unused upper bits read back as zero.
 
-- CTRL (0x00) — 8-bit control register, write/read.
+- **CTRL** (0x00) — 8-bit control register, write/read.
   - [0] - TX enable
   - [1] - RX enable
   - [2] - Parity enable (applies to both TX and RX)
 
-- STATUS (0x01) - 8-bit status register, read-only. Reflects the current state of the peripheral.
+- **STATUS** (0x01) - 8-bit status register, read-only. Reflects the current state of the peripheral.
   - [0] — TX busy: high while a frame is being transmitted
   - [1] — RX valid: high when a received byte is ready to be read
   - [2] — Framing error: stop bit was not logic 1
   - [3] — Parity error: received parity bit didn't match expected even parity
   - [4] — Overrun: a new frame arrived before the previous byte was read
 
-- TXDATA (0x02) — 8-bit, write-only. Writing here loads the transmit byte and simultaneously asserts tx_st, triggering the TX FSM to start transmission immediately.
-- RXDATA (0x03) — 8-bit, read-only. Returns the last received byte. Reading this register automatically asserts rx_read, clearing rx_val and the overrun flag.
-- BAUD_CNT (0x04) — 16-bit, write/read. Sets the baud rate divisor for both TX and RX baud generators. Calculated as CLK_FREQ / BAUD_RATE.
+- **TXDATA** (0x02) — 8-bit, write-only. Writing here loads the transmit byte and simultaneously asserts tx_st, triggering the TX FSM to start transmission immediately.
+- **RXDATA** (0x03) — 8-bit, read-only. Returns the last received byte. Reading this register automatically asserts rx_read, clearing rx_val and the overrun flag.
+- **BAUD_CNT** (0x04) — 16-bit, write/read. Sets the baud rate divisor for both TX and RX baud generators. Calculated as CLK_FREQ / BAUD_RATE.
 
 ---
 
 ## Simulation — Full-Duplex Testbench
 
-The testbench instantiates two `UART_top` instances (`uart_A` and `uart_B`) with their TX/RX lines cross-connected, running on independent clocks at different frequencies — both configured to the same baud rate.
+The [testbench](RTL%20Files/uart_fullduplex_tb.v) instantiates two `UART_top` instances (`uart_A` and `uart_B`) with their TX/RX lines cross-connected, running on independent clocks at different frequencies — both configured to the same baud rate.
+
+![tbd](Images/UART_fullduplex.png)
+
+**Baud divisor formula:**
+```
+baud_cnt = CLK_FREQ / BAUD_RATE
+```
 
 | | UART_A | UART_B |
 |-|--------|--------|
@@ -188,27 +190,27 @@ The testbench instantiates two `UART_top` instances (`uart_A` and `uart_B`) with
 
 **Transfer sequence:**
 
-| Step | UART_A sends | UART_B sends |
-|------|-------------|-------------|
-| Round 1 | `0xAA` (170) | `0x55` (85) |
-| Round 2 | `0x64` (100) | `0x7F` (127) |
+| Step | UART_A sends | UART_B sends | UART_A receives | UART_B receives|
+|------|-------------|-------------|-----------------|-------------|
+| Round 1 | `0xAA` (170) | `0x55` (85) | `0x55` (85) | `0xAA` (170) |
+| Round 2 | `0x64` (100) | `0x73` (115) | `0x73` (115) | `0x64` (100) |
+| Round 3 | `0x2F` (47) | `0xE1` (225) | `0xE1` (225) | `0x2F` (47) |
+| Round 4 | `0xD2` (210) | `0xC3` (195) | `0xC3` (195) | `0xD2` (210) |
+
 
 Each instance waits on `rx_val` before reading RXDATA and transmitting the next byte — demonstrating synchronized full-duplex handshaking across different clock domains.
 
----
+### Simulation Waveforms
 
-## Simulation Waveforms
+The following Simulation results validate the above mentioned full duplex data transfer behaviour between the UART modules.
 
-> *Add waveform screenshots here showing TX/RX lines, rx_val assertion, and rx_data capture.*
+![out](Images/sim_res.png)
 
-<!-- Example: ![Full-duplex waveform](sim/waveforms/fullduplex_wave.png) -->
+![hig](Images/sim_highlight.png)
 
----
-
-## Tools Used
-
-| Tool | Purpose |
-|------|---------|
-| Vivado / Yosys | RTL schematic / synthesis |
+#### Tool used: Vivado
 
 ---
+## Conclusion
+
+This UART peripheral demonstrates a clean, modular RTL design with clearly separated TX, RX, and baud generation logic, all integrated through a lightweight register-mapped interface. The use of center-sampling in the RX path and independent baud gating per FSM reflects practical design decisions aimed at robustness rather than just functional correctness. The full-duplex testbench — running two instances across different clock domains at matched baud rates — validates the design end-to-end under realistic conditions. Overall, this serves as a solid foundation for SoC peripheral integration or further extension with features like FIFO buffering, interrupt support, or an APB/AHB wrapper.
