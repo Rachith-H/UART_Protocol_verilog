@@ -7,7 +7,19 @@ The UART follows the standard serial communication protocol with configurable ba
 The design has been verified using RTL simulation with UART full duplex testing, including successful back-to-back byte transfers.
 
 ---
+## Table of Contents
+- [Features](#features)
+- [Block Diagram](#block-diagram)
+- [Module Reference](#module-reference)
+  - [UART Peripheral](#uart-peripheral)
+  - [UART Transmitter](#uart-transmitter)
+  - [UART Receiver](#uart-receiver)
+  - [BAUD Generator](#baud-generator)
+- [Register Map](#register-map)
+- [Simulation Results](#simulation-results)
+- [Conclusion](#conclusion)
 
+---
 ## Features
 
 - Full duplex TX and RX operation
@@ -29,7 +41,7 @@ The design has been verified using RTL simulation with UART full duplex testing,
 
 ## Module Reference
 
-### [UART_top](RTL%20Files/UART_top.v)
+### [UART Peripheral](RTL%20Files/UART_top.v)
 
 UART_top is the integration layer that ties the TX, RX, and dual baud generator instances into a single peripheral. 
 It exposes a register-mapped interface via sel, en, and a 3-bit offset, covering five registers - CTRL, STATUS, TXDATA, RXDATA, and BAUD_CNT. 
@@ -170,9 +182,9 @@ Registers are word-aligned and 32-bit wide, with unused upper bits read back as 
 
 ---
 
-## Simulation — Full-Duplex Testbench
+## Simulation Results
 
-The [testbench](RTL%20Files/uart_fullduplex_tb.v) instantiates two `UART_top` instances (`uart_A` and `uart_B`) with their TX/RX lines cross-connected, running on independent clocks at different frequencies — both configured to the same baud rate.
+The [testbench](RTL%20Files/uart_fullduplex_tb.v) instantiates two `UART_top` instances (`uart_A` and `uart_B`) with their TX/RX lines cross-connected, running on independent clocks at different frequencies — both configured to the same baud rate, demonstrating Full Duplex data transfer between them.
 
 ![tbd](Images/UART_fullduplex.png)
 
