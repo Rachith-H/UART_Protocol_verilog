@@ -1,4 +1,4 @@
-# Full-Duplex UART Peripheral - Verilog RTL
+# UART Peripheral Design — RTL Implementation with Full-Duplex Simulation
 
 This repository contains a fully synthesizable UART (Universal Asynchronous Receiver Transmitter) design
 implemented in Verilog HDL. The design consists of independent transmitter (TX),
